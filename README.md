@@ -123,3 +123,14 @@ gradle -p android assembleRelease
 - Nama remote diberi prefix MediaStore ID supaya file bernama sama tidak saling menimpa.
 - Android menyimpan signature lokal; index Telegram juga menyimpan SHA-256 untuk memverifikasi file tanpa upload ulang.
 - Ubah folder sync atau hapus data aplikasi jika ingin memulai ulang sinkronisasi.
+
+## Disclaimer
+
+This project is provided for **educational and informational purposes only**.
+
+It is intended to demonstrate programming concepts, software development techniques, API usage, automation, and related technologies. Users are responsible for ensuring that their use of this project complies with all applicable laws, regulations, and the terms of service of any third-party service they interact with.
+
+The author does not encourage or endorse unauthorized access, abuse, circumvention of security measures, or any activity that violates applicable laws or third-party terms of service.
+
+Use this project responsibly and at your own risk.
+
