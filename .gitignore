@@ -1,0 +1,22 @@
+# Go runtime state
+backend/tgdrive-api
+backend/tgdrive.session
+backend/tgdrive-index.json
+backend/.tgdrive-cache/
+
+# Android/Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/app/libs/tgdrive.aar
+android/local.properties
+*.iml
+.idea/
+
+# Build artifacts
+dist/
+
+# Secrets and local environment
+.env
+*.keystore
+*.jks

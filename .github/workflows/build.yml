@@ -1,0 +1,138 @@
+name: Build TgDrive
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: backend/go.sum
+
+      - name: Test Go runtime
+        working-directory: backend
+        run: go test ./...
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK and NDK
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.0.12077973" >> "$GITHUB_ENV"
+
+      - name: Prepare release signing
+        env:
+          TGDRIVE_KEYSTORE_BASE64: ${{ secrets.TGDRIVE_KEYSTORE_BASE64 }}
+          TGDRIVE_KEYSTORE_PASSWORD: ${{ secrets.TGDRIVE_KEYSTORE_PASSWORD }}
+          TGDRIVE_KEY_ALIAS: ${{ secrets.TGDRIVE_KEY_ALIAS }}
+          TGDRIVE_KEY_PASSWORD: ${{ secrets.TGDRIVE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$TGDRIVE_KEYSTORE_BASE64" || { echo "Missing TGDRIVE_KEYSTORE_BASE64" >&2; exit 1; }
+          test -n "$TGDRIVE_KEYSTORE_PASSWORD" || { echo "Missing TGDRIVE_KEYSTORE_PASSWORD" >&2; exit 1; }
+          test -n "$TGDRIVE_KEY_ALIAS" || { echo "Missing TGDRIVE_KEY_ALIAS" >&2; exit 1; }
+          test -n "$TGDRIVE_KEY_PASSWORD" || { echo "Missing TGDRIVE_KEY_PASSWORD" >&2; exit 1; }
+          printf '%s' "$TGDRIVE_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/tgdrive-release.jks"
+          chmod 600 "$RUNNER_TEMP/tgdrive-release.jks"
+          if ! keytool -list \
+            -keystore "$RUNNER_TEMP/tgdrive-release.jks" \
+            -storepass "$TGDRIVE_KEYSTORE_PASSWORD" \
+            -alias "$TGDRIVE_KEY_ALIAS" >/dev/null 2>&1; then
+            mapfile -t detected_aliases < <(
+              keytool -list \
+                -keystore "$RUNNER_TEMP/tgdrive-release.jks" \
+                -storepass "$TGDRIVE_KEYSTORE_PASSWORD" 2>/dev/null \
+                | awk -F',' '/PrivateKeyEntry/ {print $1}'
+            )
+            if [ "${#detected_aliases[@]}" -ne 1 ]; then
+              echo "TGDRIVE_KEY_ALIAS tidak cocok dan keystore tidak memiliki tepat satu private key alias" >&2
+              exit 1
+            fi
+            TGDRIVE_KEY_ALIAS="${detected_aliases[0]}"
+          fi
+          {
+            echo "TGDRIVE_KEYSTORE_FILE=$RUNNER_TEMP/tgdrive-release.jks"
+            echo "TGDRIVE_KEYSTORE_PASSWORD=$TGDRIVE_KEYSTORE_PASSWORD"
+            echo "TGDRIVE_KEY_ALIAS=$TGDRIVE_KEY_ALIAS"
+            echo "TGDRIVE_KEY_PASSWORD=$TGDRIVE_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+
+      - name: Build embedded Go AAR
+        run: |
+          cd backend
+          go get -tool golang.org/x/mobile/cmd/gobind@v0.0.0-20260709172247-6129f5bee9d5
+          cd ..
+          go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20260709172247-6129f5bee9d5
+          gomobile init
+          mkdir -p android/app/libs
+          cd backend
+          gomobile bind \
+            -target=android \
+            -androidapi=26 \
+            -javapkg=com.tgdrive \
+            -o ../android/app/libs/tgdrive.aar \
+            ./mobile/bridge
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.10.2"
+
+      - name: Build Android APK
+        run: gradle -p android assembleRelease --no-daemon
+
+      - name: Upload arm64-v8a release APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: android/app/build/outputs/apk/release/app-arm64-v8a-release.apk
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload armeabi-v7a release APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: android/app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload x86 release APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: android/app/build/outputs/apk/release/app-x86-release.apk
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload x86_64 release APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: android/app/build/outputs/apk/release/app-x86_64-release.apk
+          archive: false
+          if-no-files-found: error
+
+      - name: Upload universal release APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: android/app/build/outputs/apk/release/app-universal-release.apk
+          archive: false
+          if-no-files-found: error
